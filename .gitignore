@@ -1,0 +1,25 @@
+# Python
+myvenv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Env
+.env
+.env.docker
+
+# Alembic (keep structure, ignore nothing here actually)
+
+# VS Code
+.vscode/
+
+# Node (for frontend later)
+node_modules/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
