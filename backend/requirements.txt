@@ -23,7 +23,7 @@ anthropic==0.42.0
 # ── Vector DB (Qdrant hybrid search)
 qdrant-client==1.11.0
 fastembed==0.7.4
-cohere==5.9.4
+cohere==5.11.0
 # ── GitHub integration
 PyGitHub==2.5.0
 GitPython==3.1.44
