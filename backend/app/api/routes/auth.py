@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.core.config import get_settings
 from app.db.database import get_db
 from app.db.models import User
 from app.core.security import get_current_user, hash_password, verify_password, create_access_token, decode_access_token

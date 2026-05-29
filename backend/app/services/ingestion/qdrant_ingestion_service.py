@@ -1,5 +1,5 @@
 import os
-import shutil
+import shutil, tempfile, stat
 from dataclasses import dataclass
 from git import Repo
 from app.core.config import get_settings
@@ -33,16 +33,28 @@ class CodeChunk:
     repo_name:  str
 
 
+def _force_remove(clone_path: str) -> None:
+    """
+    On Windows, .git files are read-only and shutil.rmtree fails.
+    This forces deletion by removing read-only flag first.
+    """
+    def on_error(func, path, exc_info):
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+
+    shutil.rmtree(clone_path, onerror=on_error)
+
 def clone_repo(github_url: str, user_id: str) -> tuple[str, str]:
     """
     Clone a GitHub repo to /tmp/forge/{user_id}/{repo_name}.
     Returns (clone_path, repo_name).
     """
     repo_name  = github_url.rstrip("/").split("/")[-1].replace(".git", "")
-    clone_path = os.path.join("/tmp", "forge", user_id, repo_name)
+    directory_path = os.path.join(tempfile.gettempdir(), "forge")
+    clone_path = os.path.join(directory_path, user_id, repo_name)
 
     if os.path.exists(clone_path):
-        shutil.rmtree(clone_path)
+        _force_remove(clone_path=clone_path)
 
     auth_url = github_url
     if settings.github_token:

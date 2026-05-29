@@ -4,14 +4,16 @@ from app.services.ingestion.qdrant_ingestion_service import CodeChunk
 from qdrant_client import QdrantClient, models
 import uuid
 from app.services.ingestion.qudrant_setup import get_client
+from fastembed.sparse.bm25 import Bm25
+
 settings = get_settings()
 
-DENSE_MODEL = "sentence-transfomers/all-MiniLM-L6-v2"
+DENSE_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 SPARSE_MODEL = "Qdrant/bm25"
 BATCH_SIZE = 100
 
 _dense_model : TextEmbedding = None
-_sparse_model : SparseEmbedding = None
+_sparse_model : Bm25 = None
 
 def _get_dense_model() -> TextEmbedding:
     global _dense_model
@@ -23,7 +25,7 @@ def _get_dense_model() -> TextEmbedding:
 def _get_sparse_model() -> SparseEmbedding:
     global _sparse_model
     if _sparse_model is None:
-        _sparse_model = SparseEmbedding(SPARSE_MODEL)
+        _sparse_model = Bm25(SPARSE_MODEL)
         
     return _sparse_model
 
