@@ -22,7 +22,8 @@ class Conversation(Base):
     ticket_description: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     status:             Mapped[str]           = mapped_column(String(50), default="pending")
     created_at:         Mapped[datetime]      = mapped_column(DateTime(timezone=True), server_default=func.now())
-
+    mode: Mapped[str] = mapped_column(String(20), default="general")  # rag | agentic | general
+    
     user:       Mapped["User"]         = relationship("User",       back_populates="conversations")
     repository: Mapped["Repository"]   = relationship("Repository", back_populates="conversations")
     messages:   Mapped[List["Message"]] = relationship("Message",   back_populates="conversation", cascade="all, delete-orphan")

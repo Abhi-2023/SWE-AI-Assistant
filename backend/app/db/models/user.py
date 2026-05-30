@@ -14,6 +14,7 @@ class User(Base):
     __tablename__ = "user"
 
     id:              Mapped[str]           = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     email:           Mapped[str]           = mapped_column(String(100), unique=True, index=True)
     hashed_password: Mapped[str]           = mapped_column(String(255))
     github_token:    Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
