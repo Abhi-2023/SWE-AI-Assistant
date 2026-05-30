@@ -2,13 +2,14 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from fastapi import APIRouter, Depends, HTTPException
-from app.db.database import get_db
+from app.db.database import get_db, async_session
 from app.db.models.repository import Repository
 from app.db.models.user import User
 from app.db.models.message import Message
 from app.db.models.conversation import Conversation
 from app.api.routes.auth import get_current_user
 from app.core.config import get_settings
+from app.agents.router_agent import route_message
 from app.services.streaming import conversation_graph, sse
 from fastapi.responses import StreamingResponse
 
@@ -19,7 +20,7 @@ router   = APIRouter(prefix='/chat', tags=['chat'])
 class ChatRequest(BaseModel):
     message:          str
     vector_namespace: str | None = None
-    conversation_id:  str | None = None  # None = new conversation
+    conversation_id:  str | None = None
 
 
 @router.post("/send")
@@ -41,6 +42,10 @@ async def send_message(
         if not repo:
             raise HTTPException(status_code=404, detail="Repository not found")
 
+    # ── Route message to get mode ─────────────────────────
+    route = route_message(payload.message, payload.vector_namespace is not None)
+    mode  = route["mode"]
+
     # ── Continue existing or create new conversation ──────
     if payload.conversation_id:
         result = await db.execute(
@@ -59,13 +64,14 @@ async def send_message(
             user_id            = current_user.id,
             repo_id            = repo.id if repo else None,
             status             = "running",
+            mode               = mode,
             ticket_description = payload.message,
         )
         db.add(conversation)
         await db.commit()
         await db.refresh(conversation)
 
-    # ── Fetch message history from this conversation ──────
+    # ── Fetch message history ─────────────────────────────
     result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation.id)
@@ -116,66 +122,81 @@ async def send_message(
         "conversation_id":     conversation.id,
     }
 
-    # ── Stream ────────────────────────────────────────────
-    async def stream(db: AsyncSession):
-        try:
-            agent_steps = []
+    conv_id = conversation.id  # capture ID before session closes
 
-            async for event in conversation_graph.astream(initial_state):
-                for node_name, node_state in event.items():
-                    step = {
-                        "type":   "step",
-                        "agent":  node_name,
-                        "status": "complete",
-                    }
-                    agent_steps.append(step)
-                    yield sse(step)
+    # ── Stream 
+    async def stream():
+        async with async_session() as db:
+            try:
+                # reload conversation in fresh session
+                result = await db.execute(
+                    select(Conversation).where(Conversation.id == conv_id)
+                )
+                conversation = result.scalar_one()
 
-            final = node_state
+                agent_steps = []
 
-            # Update conversation
-            conversation.mode        = final.get("mode", "general")
-            conversation.ticket_type = final.get("ticket_type")
-            conversation.status      = "completed"
-            db.add(conversation)
+                async for event in conversation_graph.astream(initial_state):
+                    for node_name, node_state in event.items():
+                        step = {
+                            "type":   "step",
+                            "agent":  node_name,
+                            "status": "complete",
+                        }
+                        agent_steps.append(step)
+                        yield sse(step)
 
-            # Save assistant message
-            db.add(Message(
-                conversation_id = conversation.id,
-                role            = "assistant",
-                content         = final.get("llm_response") or final.get("pr_url") or "Done.",
-                pr_url          = final.get("pr_url"),
-                agent_steps     = agent_steps,
-                files_changed   = final.get("files_to_modify", []),
-            ))
-            await db.commit()
+                final = node_state
 
-            # Emit final event
-            if final.get("pr_url"):
-                yield sse({
-                    "type":          "pr",
-                    "pr_url":        final["pr_url"],
-                    "pr_title":      final.get("pr_title", ""),
-                    "files_changed": final.get("files_to_modify", []),
-                    "tests_passed":  final.get("tests_passed", False),
-                })
-            elif final.get("llm_response"):
-                yield sse({
-                    "type":    "message",
-                    "content": final["llm_response"],
-                })
+                # update conversation
+                conversation.mode        = final.get("mode", "general")
+                conversation.ticket_type = final.get("ticket_type")
+                conversation.status      = "completed"
+                db.add(conversation)
 
-            yield sse({"type": "done"})
+                # save assistant message
+                db.add(Message(
+                    conversation_id = conv_id,
+                    role            = "assistant",
+                    content         = final.get("llm_response") or final.get("pr_url") or "Done.",
+                    pr_url          = final.get("pr_url"),
+                    agent_steps     = agent_steps,
+                    files_changed   = final.get("files_to_modify", []),
+                ))
+                await db.commit()
 
-        except Exception as e:
-            conversation.status = "failed"
-            db.add(conversation)
-            await db.commit()
-            yield sse({"type": "error", "detail": str(e)})
-            yield sse({"type": "done"})
+                # emit final event
+                if final.get("pr_url"):
+                    yield sse({
+                        "type":          "pr",
+                        "pr_url":        final["pr_url"],
+                        "pr_title":      final.get("pr_title", ""),
+                        "files_changed": final.get("files_to_modify", []),
+                        "tests_passed":  final.get("tests_passed", False),
+                    })
+                elif final.get("llm_response"):
+                    yield sse({
+                        "type":    "message",
+                        "content": final["llm_response"],
+                    })
+
+                yield sse({"type": "done"})
+
+            except Exception as e:
+                # reload and mark failed
+                result = await db.execute(
+                    select(Conversation).where(Conversation.id == conv_id)
+                )
+                conv = result.scalar_one_or_none()
+                if conv:
+                    conv.status = "failed"
+                    db.add(conv)
+                    await db.commit()
+                yield sse({"type": "error", "detail": str(e)})
+                yield sse({"type": "done"})
 
     return StreamingResponse(
-        stream(db=db),
+        stream(),
         media_type = "text/event-stream",
         headers    = {
             "Cache-Control":     "no-cache",
@@ -257,6 +278,6 @@ async def delete_conversation(
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    await db.delete(conversation)  # cascades to messages
+    await db.delete(conversation)
     await db.commit()
     return {"status": "deleted", "conversation_id": conversation_id}

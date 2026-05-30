@@ -1,7 +1,7 @@
 import json
 import tempfile
 import os
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
 
 from app.agents.agent_state import AgentState
@@ -14,12 +14,10 @@ from app.core.config import get_settings
 settings = get_settings()
 
 
-# ── SSE helper ────────────────────────────────────────────
 def sse(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
-# ── Node: Router ──────────────────────────────────────────
 def router_node(state: AgentState) -> AgentState:
     result = route_message(
         user_message  = state["user_message"],
@@ -27,39 +25,37 @@ def router_node(state: AgentState) -> AgentState:
     )
     return {
         **state,
-        "mode":             result["mode"],
+        "mode":              result["mode"],
         "routing_reasoning": result["reasoning"],
     }
 
 
-# ── Node: General ─────────────────────────────────────────
 def general_node(state: AgentState) -> AgentState:
     messages = [SystemMessage(content="""
-            You are an expert Software Engineering and AI Assistant.
+        You are an expert Software Engineering and AI Assistant.
+        Your responsibilities:
+        - Answer software engineering questions clearly and accurately.
+        - Help debug errors by reasoning from provided information.
+        - When explaining concepts, start with intuition before diving into technical details.
+        - Use examples whenever they improve understanding.
+        - Prefer practical engineering advice over theoretical discussion unless explicitly requested.
 
-            Your responsibilities:
-            - Answer software engineering questions clearly and accurately.
-            - Help debug errors by reasoning from provided information.
-            - When explaining concepts, start with intuition before diving into technical details.
-            - Use examples whenever they improve understanding.
-            - Prefer practical engineering advice over theoretical discussion unless explicitly requested.
+        Response Guidelines:
+        - Be concise for simple questions.
+        - Be detailed for technical or educational questions.
+        - Use bullet points for multi-step explanations.
+        - Use code snippets when appropriate.
+        - Clearly distinguish facts from assumptions.
+        """)]
 
-            Response Guidelines:
-            - Be concise for simple questions.
-            - Be detailed for technical or educational questions.
-            - Use bullet points for multi-step explanations.
-            - Use code snippets when appropriate.
-            - Clearly distinguish facts from assumptions.
-            """)]
-    
     for msg in state.get("chat_history", []):
         if msg["role"] == "user":
             messages.append(HumanMessage(content=msg["content"]))
         else:
-            messages.append(SystemMessage(content=msg["content"]))
-    
+            messages.append(AIMessage(content=msg["content"]))  # ✅ fixed
+
     messages.append(HumanMessage(content=state["user_message"]))
-    
+
     response = llm.invoke(messages).content.strip()
     return {**state, "llm_response": response}
 
@@ -80,7 +76,7 @@ def rag_node(state: AgentState) -> AgentState:
         if msg["role"] == "user":
             messages.append(HumanMessage(content=msg["content"]))
         else:
-            messages.append(SystemMessage(content=msg["content"]))
+            messages.append(AIMessage(content=msg["content"]))  # ✅ fixed
 
     messages.append(HumanMessage(content=f"""
     Question: {state["user_message"]}
@@ -97,7 +93,6 @@ def rag_node(state: AgentState) -> AgentState:
     }
 
 
-# ── Node: Agentic ─────────────────────────────────────────
 def agentic_node(state: AgentState) -> AgentState:
     local_repo_path = os.path.join(
         tempfile.gettempdir(), "forge",
@@ -128,24 +123,22 @@ def agentic_node(state: AgentState) -> AgentState:
         "pr_url":              None,
     }
 
-    # Run full agent pipeline
     final = main_agent.invoke(agentic_state)
 
     return {
         **state,
-        "ticket_type":        final.get("ticket_type", ""),
-        "ticket_intent":      final.get("ticket_intent", ""),
-        "files_to_modify":    final.get("files_to_modify", []),
-        "code_changes":       final.get("code_changes", {}),
-        "test_results":       final.get("test_results", ""),
-        "tests_passed":       final.get("tests_passed", False),
-        "commit_message":     final.get("commit_message", ""),
-        "pr_title":           final.get("pr_title", ""),
-        "pr_url":             final.get("pr_url"),
+        "ticket_type":     final.get("ticket_type", ""),
+        "ticket_intent":   final.get("ticket_intent", ""),
+        "files_to_modify": final.get("files_to_modify", []),
+        "code_changes":    final.get("code_changes", {}),
+        "test_results":    final.get("test_results", ""),
+        "tests_passed":    final.get("tests_passed", False),
+        "commit_message":  final.get("commit_message", ""),
+        "pr_title":        final.get("pr_title", ""),
+        "pr_url":          final.get("pr_url"),
     }
 
 
-# ── Node: No Namespace ────────────────────────────────────
 def no_namespace_node(state: AgentState) -> AgentState:
     return {
         **state,
@@ -153,12 +146,10 @@ def no_namespace_node(state: AgentState) -> AgentState:
     }
 
 
-# ── Conditional Router ────────────────────────────────────
 def route_by_mode(state: AgentState) -> str:
     return state["mode"]
 
 
-# ── Build Conversation Graph ──────────────────────────────
 conversation_graph_builder = StateGraph(AgentState)
 
 conversation_graph_builder.add_node("router_node",       router_node)

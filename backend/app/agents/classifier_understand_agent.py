@@ -3,6 +3,8 @@ import json
 from langgraph.graph import StateGraph, START, END
 from app.agents.agent_state import AgentState
 from app.llm_model import llm
+from app.agents.utils import parse_llm_json
+
 
 def classifier_node(state: AgentState):
     system_prompt = """
@@ -24,12 +26,8 @@ def classifier_node(state: AgentState):
         """
     response = llm.invoke([SystemMessage(content=system_prompt)
                           , HumanMessage(content=f"Ticket: {state['ticket_desc']}")]).content.strip().strip("")
-    if response.startswith("```"):
-        response = response.split("```")[1]
-        if response.startswith("json"):
-            response = response[4:]
+    result = parse_llm_json(response)
 
-    result = json.loads(response.strip())
     
     return {
         **state,

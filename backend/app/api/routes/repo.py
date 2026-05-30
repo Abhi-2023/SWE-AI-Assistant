@@ -8,7 +8,7 @@ from app.core.security import get_current_user
 from app.services.ingestion.qudrant_setup import get_collection_name, delete_collection
 from app.services.ingestion.pipeline import run_ingestion
 
-router = APIRouter(prefix='/repo', tags=['repo'])
+router = APIRouter(prefix='/repos', tags=['repos'])
 
 class IngestRequest(BaseModel):
     github_url: HttpUrl
@@ -39,7 +39,7 @@ def extract_repo_name(repo_url: str) -> str:
 
 
 
-@router.post("/ingestion", response_model=IngestResponse)
+@router.post("/ingest", response_model=IngestResponse)
 async def ingest_repo(body: IngestRequest, db: AsyncSession = Depends(get_db), user = Depends(get_current_user)):
     repo_name = extract_repo_name(body.github_url)
 
@@ -118,9 +118,9 @@ async def delete_repo(body: IngestRequest, user= Depends(get_current_user), db: 
     
     
     
-@router.get('/list_repo')
+@router.get('')
 async def get_user_repos(user= Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = db.execute(select(Repository).where(Repository.user_id == user.id))
+    result = await db.execute(select(Repository).where(Repository.user_id == user.id))
     repos = result.scalars().all()
     
     return [

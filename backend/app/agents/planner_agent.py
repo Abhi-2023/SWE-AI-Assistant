@@ -11,6 +11,8 @@ from app.llm_model import llm
 from fastembed.sparse.bm25 import Bm25
 from app.services.ingestion.qudrant_setup import get_client
 from app.core.config import get_settings
+from app.agents.utils import parse_llm_json
+
 
 settings = get_settings()
 
@@ -47,8 +49,12 @@ def query_context_retrieval(vector_namespace: str, ticket_intent: str, top_k : i
     dense_model = _get_dense_model()
     sparse_model = _get_sparse_model()
     dense_vector = list(dense_model.embed([ticket_intent]))[0].tolist()
-    sparse_vector = list(sparse_model.embed([ticket_intent]))[0]
-    
+    sparse_result = list(sparse_model.embed([ticket_intent]))[0]
+    from qdrant_client.models import SparseVector
+    sparse_vector = SparseVector(
+        indices = sparse_result.indices.tolist(),
+        values  = sparse_result.values.tolist(),
+    )
     results = client.query_points(
         collection_name=vector_namespace,
         prefetch=[
@@ -148,12 +154,7 @@ def planner_node(state: AgentState):
                                         Retrieved Codebase Context:
                                         {context_text}
                                         """)]).content.strip().strip("")
-    if response.startswith("```"):
-        response = response.split("```")[1]
-        if response.startswith("json"):
-            response = response[4:]
-            
-    result = json.loads(response.strip())
+    result = parse_llm_json(response)
     
     return {
         **state,
