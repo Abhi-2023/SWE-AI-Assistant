@@ -10,12 +10,14 @@ from app.agents.agent_state import AgentState
 from app.llm_model import llm
 from fastembed.sparse.bm25 import Bm25
 from app.services.ingestion.qudrant_setup import get_client
+from app.core.config import get_settings
 
+settings = get_settings()
 
 DENSE_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 SPARSE_MODEL = "Qdrant/bm25"
 BATCH_SIZE = 100
-cohere_client = cohere.Client(api_key=os.getenv('COHERE_API_KEY'))
+cohere_client = cohere.Client(api_key=settings.cohere_api_key)
 
 def ticket_classifier(state: AgentState):
     if state['ticket_type'] == 'defect':

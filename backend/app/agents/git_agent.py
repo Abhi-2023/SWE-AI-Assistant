@@ -4,7 +4,7 @@ from git import Repo
 from github import Github
 from langgraph.graph import StateGraph, START, END
 from urllib.parse import urlparse
-from app.services.ingestion.embedder import _force_remove
+from app.services.ingestion.qdrant_ingestion_service import _force_remove
 import shutil
 
 
