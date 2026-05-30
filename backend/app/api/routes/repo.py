@@ -12,6 +12,7 @@ router = APIRouter(prefix='/repo', tags=['repo'])
 
 class IngestRequest(BaseModel):
     github_url: HttpUrl
+    sync_branch : str = "main"
     
     @field_validator("github_url")
     @classmethod
@@ -55,7 +56,8 @@ async def ingest_repo(body: IngestRequest, db: AsyncSession = Depends(get_db), u
     repo = Repository(
         user_id = user.id,
         github_url = body.github_url,
-        vector_namespace=vector_namespace
+        vector_namespace=vector_namespace,
+        sync_branch = body.sync_branch
     )
 
     db.add(repo)

@@ -19,6 +19,7 @@ class Repository(Base):
     vector_namespace: Mapped[str]              = mapped_column(String(255))
     last_synced_at:   Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at:       Mapped[datetime]         = mapped_column(DateTime(timezone=True), server_default=func.now())
+    sync_branch: Mapped[str] = mapped_column(String(100), default="main")
 
     user:          Mapped["User"]               = relationship("User",         back_populates="repositories")
     conversations: Mapped[List["Conversation"]] = relationship("Conversation", back_populates="repository", cascade="all, delete-orphan")
